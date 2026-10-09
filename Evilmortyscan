@@ -1,0 +1,238 @@
+-- Причина: Backpack не всегда наследуется от игрока (в некоторых играх он внутри PlayerGui
+-- или переименован). Также строка INVENTARIO может обрезаться по высоте.
+-- Решение: поиск Backpack через GetChildren с проверкой класса, а не FindFirstChildOfClass.
+-- Дополнительно: поиск Tools в Character, Backpack, PlayerGui.
+-- Высота INVENTARIO увеличена до 60.
+
+local P=game:GetService("Players")
+local R=game:GetService("RunService")
+local G=game:GetService("CoreGui")
+local me=P.LocalPlayer
+local gui=me:WaitForChild("PlayerGui")
+local Y=Color3.fromRGB(255,210,0)
+local B=Color3.new(0,0,0)
+local RED=Color3.fromRGB(200,20,20)
+local IMG="rbxassetid://105752278503706"
+
+for _,v in ipairs({G,gui}) do
+    pcall(function()
+        local old=v:FindFirstChild("EvilMortyScanner")
+        if old then old:Destroy() end
+    end)
+end
+
+local ui=Instance.new("ScreenGui")
+ui.Name="EvilMortyScanner"
+ui.ResetOnSpawn=false
+ui.Parent=G
+
+local function button(txt,y)
+    local b=Instance.new("TextButton")
+    b.Size=UDim2.fromOffset(110,40)
+    b.Position=UDim2.new(0,20,.5,y)
+    b.BackgroundColor3=B
+    b.Text=txt
+    b.TextColor3=Y
+    b.Font=Enum.Font.Code
+    b.TextScaled=true
+    b.Parent=ui
+    local s=Instance.new("UIStroke",b)
+    s.Color=RED
+    return b
+end
+
+local scan=button("SCAN",-50)
+local stop=button("STOP",0)
+local laser=Instance.new("Frame",ui)
+laser.BackgroundColor3=Y
+laser.BorderSizePixel=0
+laser.Visible=false
+laser.ZIndex=5
+
+local target,bb,conn
+
+local function equipped(char)
+    local t={}
+    for _,v in ipairs(char:GetChildren()) do
+        if v:IsA("Tool") then table.insert(t,v.Name) end
+    end
+    return #t>0 and table.concat(t,", ") or "NINGUNO"
+end
+
+-- ИЗМЕНЕНО: поиск Backpack и Tool через обход всех потомков игрока.
+local function inventory(char,plr)
+    local t={}
+    local seen={}
+    local function addTool(v)
+        if v:IsA("Tool") and not seen[v] then
+            seen[v]=true
+            table.insert(t,v.Name)
+        end
+    end
+    for _,v in ipairs(char:GetChildren()) do addTool(v) end
+    for _,v in ipairs(plr:GetChildren()) do
+        if v:IsA("Backpack") then
+            for _,tool in ipairs(v:GetChildren()) do addTool(tool) end
+        end
+    end
+    local pg=plr:FindFirstChildOfClass("PlayerGui")
+    if pg then
+        for _,v in ipairs(pg:GetDescendants()) do addTool(v) end
+    end
+    return #t>0 and table.concat(t,", ") or "VACIO"
+end
+
+local function movement(char)
+    local h=char:FindFirstChildOfClass("Humanoid")
+    local root=char:FindFirstChild("HumanoidRootPart")
+    if not h or not root then return "UNKNOWN" end
+    local s=h:GetState()
+    if s==Enum.HumanoidStateType.Jumping then return "JUMPING" end
+    if s==Enum.HumanoidStateType.Freefall then return "FALLING" end
+    if s==Enum.HumanoidStateType.Climbing then return "CLIMBING" end
+    if s==Enum.HumanoidStateType.Swimming then return "SWIMMING" end
+    local v=root.AssemblyLinearVelocity
+    local speed=Vector3.new(v.X,0,v.Z).Magnitude
+    if v.Y < -20 then return "FALLING" end
+    if v.Y > 15 then return "JUMPING" end
+    if speed<1 then return "IDLE" end
+    return speed<h.WalkSpeed+1 and "WALKING" or "RUNNING"
+end
+
+local function create(char)
+    if bb then bb:Destroy() end
+    local head=char:FindFirstChild("Head")
+    if not head then return end
+    bb=Instance.new("BillboardGui")
+    bb.Name="EvilMortyScan"
+    bb.Adornee=head
+    bb.Size=UDim2.fromOffset(240,320)
+    bb.StudsOffset=Vector3.new(0,0,0)
+    bb.StudsOffsetWorldSpace=Vector3.new(0,0,0)
+    bb.ExtentsOffset=Vector3.new(0,0,0)
+    bb.ExtentsOffsetWorldSpace=Vector3.new(0,0,0)
+    bb.AlwaysOnTop=true
+    bb.Parent=head
+
+    local image=Instance.new("ImageLabel",bb)
+    image.Name="ScanImage"
+    image.AnchorPoint=Vector2.new(0.5,0.5)
+    image.Position=UDim2.fromScale(0.5,0.5)
+    image.Size=UDim2.fromOffset(70,70)
+    image.BackgroundTransparency=1
+    image.Image=IMG
+    image.ScaleType=Enum.ScaleType.Fit
+    image.ZIndex=2
+
+    local root=Instance.new("Frame",bb)
+    root.Name="InfoFrame"
+    root.AnchorPoint=Vector2.new(0.5,0)
+    root.Position=UDim2.new(0.5,0,0.5,40)
+    root.Size=UDim2.new(1,0,0,220)
+    root.BackgroundTransparency=1
+
+    local list=Instance.new("UIListLayout",root)
+    list.HorizontalAlignment=Enum.HorizontalAlignment.Center
+    list.Padding=UDim.new(0,2)
+
+    local function label(txt,height)
+        local l=Instance.new("TextLabel",root)
+        l.Size=UDim2.new(1,0,0,height or 17)
+        l.BackgroundColor3=B
+        l.BackgroundTransparency=.2
+        l.TextColor3=Y
+        l.TextStrokeTransparency=.3
+        l.Font=Enum.Font.Code
+        l.TextSize=11
+        l.TextWrapped=true
+        l.TextXAlignment=Enum.TextXAlignment.Left
+        l.Text=txt
+        return l
+    end
+
+    label(target.Name,20)
+    local status=label("STATUS: --")
+    local subject=label("SUJETO: --")
+    local health=label("SALUD: --")
+    local weapon=label("EQUIPADO: --",30)
+    local inv=label("INVENTARIO: --",60)
+    local move=label("MOVIMIENTO: --")
+    local dist=label("DISTANCIA: --")
+    return {status,subject,health,weapon,inv,move,dist}
+end
+
+local labels
+local function closest()
+    local c=me.Character
+    local r=c and c:FindFirstChild("HumanoidRootPart")
+    if not r then return end
+    local best,dmin
+    for _,p in ipairs(P:GetPlayers()) do
+        local ch=p.Character
+        local hr=ch and ch:FindFirstChild("HumanoidRootPart")
+        local h=ch and ch:FindFirstChildOfClass("Humanoid")
+        if p~=me and hr and h and h.Health>0 then
+            local d=(hr.Position-r.Position).Magnitude
+            if not dmin or d<dmin then best,dmin=p,d end
+        end
+    end
+    return best
+end
+
+local function start()
+    target=closest()
+    if not target then return end
+    local ch=target.Character
+    if not ch or not ch:FindFirstChild("Head") then return end
+    labels=create(ch)
+end
+
+local function finish()
+    target=nil
+    if bb then bb:Destroy() bb=nil end
+    laser.Visible=false
+end
+
+scan.MouseButton1Click:Connect(start)
+stop.MouseButton1Click:Connect(finish)
+
+conn=R.RenderStepped:Connect(function()
+    if not target then return end
+    local ch=target.Character
+    local cam=workspace.CurrentCamera
+    if not ch or not cam then
+        laser.Visible=false
+        return
+    end
+    local head=ch:FindFirstChild("Head")
+    local hum=ch:FindFirstChildOfClass("Humanoid")
+    local mine=me.Character
+    local a=mine and mine:FindFirstChild("HumanoidRootPart")
+    local b=ch:FindFirstChild("HumanoidRootPart")
+    if not head then return end
+    if not bb then labels=create(ch) end
+    if not labels then return end
+
+    labels[1].Text="STATUS: "..movement(ch)
+    labels[2].Text="SUJETO: "..target.Name
+    labels[3].Text=hum and ("SALUD: "..math.floor(hum.Health)..
+        "/"..math.floor(hum.MaxHealth)) or "SALUD: --"
+    labels[4].Text="EQUIPADO: "..equipped(ch)
+    labels[5].Text="INVENTARIO: "..inventory(ch,target)
+    labels[6].Text="MOVIMIENTO: "..movement(ch)
+    labels[7].Text="DISTANCIA: "..(a and b and
+        math.floor((a.Position-b.Position).Magnitude).." studs" or "--")
+
+    local p,on=cam:WorldToViewportPoint(head.Position)
+    if on then
+        local origin=Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y)
+        local dest=Vector2.new(p.X,p.Y)
+        local delta=dest-origin
+        laser.Visible=true
+        laser.Size=UDim2.fromOffset(delta.Magnitude,1)
+        laser.Position=UDim2.fromOffset(origin.X,origin.Y)
+        laser.Rotation=math.deg(math.atan2(delta.Y,delta.X))
+    else
+        laser.Visible=false
+    end
+end)
