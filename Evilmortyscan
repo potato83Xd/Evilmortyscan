@@ -1,8 +1,6 @@
--- Причина: Backpack не всегда наследуется от игрока (в некоторых играх он внутри PlayerGui
--- или переименован). Также строка INVENTARIO может обрезаться по высоте.
--- Решение: поиск Backpack через GetChildren с проверкой класса, а не FindFirstChildOfClass.
--- Дополнительно: поиск Tools в Character, Backpack, PlayerGui.
--- Высота INVENTARIO увеличена до 60.
+-- Звук воспроизводится при нажатии кнопки SCAN.
+-- Looped отключён: одиночное воспроизведение по клику.
+-- Повторный клик перезапускает звук с начала.
 
 local P=game:GetService("Players")
 local R=game:GetService("RunService")
@@ -13,6 +11,7 @@ local Y=Color3.fromRGB(255,210,0)
 local B=Color3.new(0,0,0)
 local RED=Color3.fromRGB(200,20,20)
 local IMG="rbxassetid://105752278503706"
+local SND="rbxassetid://137299977455447"
 
 for _,v in ipairs({G,gui}) do
     pcall(function()
@@ -25,6 +24,14 @@ local ui=Instance.new("ScreenGui")
 ui.Name="EvilMortyScanner"
 ui.ResetOnSpawn=false
 ui.Parent=G
+
+-- ИЗМЕНЕНО: Looped=false. Звук играет один раз на каждый клик SCAN.
+local scanSound=Instance.new("Sound")
+scanSound.Name="ScanSound"
+scanSound.SoundId=SND
+scanSound.Looped=false
+scanSound.Volume=1
+scanSound.Parent=ui
 
 local function button(txt,y)
     local b=Instance.new("TextButton")
@@ -59,7 +66,6 @@ local function equipped(char)
     return #t>0 and table.concat(t,", ") or "NINGUNO"
 end
 
--- ИЗМЕНЕНО: поиск Backpack и Tool через обход всех потомков игрока.
 local function inventory(char,plr)
     local t={}
     local seen={}
@@ -180,6 +186,8 @@ local function closest()
 end
 
 local function start()
+    -- ИЗМЕНЕНО: звук играет сразу при клике SCAN.
+    scanSound:Play()
     target=closest()
     if not target then return end
     local ch=target.Character
@@ -191,6 +199,7 @@ local function finish()
     target=nil
     if bb then bb:Destroy() bb=nil end
     laser.Visible=false
+    scanSound:Stop()
 end
 
 scan.MouseButton1Click:Connect(start)
