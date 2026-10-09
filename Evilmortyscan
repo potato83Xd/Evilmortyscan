@@ -1,5 +1,5 @@
--- Толщина линии уменьшена: внешняя часть 0.18, внутренняя 0.08.
--- Всё остальное без изменений. Линия в мире, привязана к головам.
+-- Уменьшен размер рамки оружия: 120x120 -> 100x100.
+-- Всё остальное без изменений.
 
 local P=game:GetService("Players")
 local R=game:GetService("RunService")
@@ -10,6 +10,7 @@ local Y=Color3.fromRGB(255,210,0)
 local B=Color3.new(0,0,0)
 local RED=Color3.fromRGB(200,20,20)
 local IMG="rbxassetid://105752278503706"
+local WPNIMG="rbxassetid://132612039997186"
 local SND="rbxassetid://137299977455447"
 
 for _,v in ipairs({G,gui}) do
@@ -51,6 +52,14 @@ local scan=button("SCAN",-50)
 local stop=button("STOP",0)
 
 local target,bb,conn
+local wpnGui
+
+local function equippedTool(char)
+    for _,v in ipairs(char:GetChildren()) do
+        if v:IsA("Tool") then return v end
+    end
+    return nil
+end
 
 local function equipped(char)
     local t={}
@@ -150,7 +159,7 @@ local function create(char)
         return l
     end
 
-    label(target.Name,20)
+    local title=label(target.Name,20)
     local status=label("STATUS: --")
     local subject=label("SUJETO: --")
     local health=label("SALUD: --")
@@ -158,7 +167,52 @@ local function create(char)
     local inv=label("INVENTARIO: --",60)
     local move=label("MOVIMIENTO: --")
     local dist=label("DISTANCIA: --")
-    return {status,subject,health,weapon,inv,move,dist}
+
+    return {
+        title=title,status=status,subject=subject,health=health,
+        weapon=weapon,inv=inv,move=move,dist=dist,
+        scanImage=image,infoFrame=root
+    }
+end
+
+local function createWeaponGui(tool)
+    if wpnGui then wpnGui:Destroy() wpnGui=nil end
+    local handle=tool:FindFirstChild("Handle")
+    if not handle then return end
+    wpnGui=Instance.new("BillboardGui")
+    wpnGui.Name="EvilMortyWeapon"
+    wpnGui.Adornee=handle
+    wpnGui.Size=UDim2.fromOffset(220,180)
+    wpnGui.StudsOffset=Vector3.new(0,0,0)
+    wpnGui.StudsOffsetWorldSpace=Vector3.new(0,0,0)
+    wpnGui.ExtentsOffset=Vector3.new(0,0,0)
+    wpnGui.ExtentsOffsetWorldSpace=Vector3.new(0,0,0)
+    wpnGui.AlwaysOnTop=true
+    wpnGui.Parent=handle
+
+    local frame=Instance.new("ImageLabel",wpnGui)
+    frame.Name="WeaponFrame"
+    frame.AnchorPoint=Vector2.new(0.5,0.5)
+    frame.Position=UDim2.fromScale(0.5,0.4)
+    -- ИЗМЕНЕНО: размер рамки оружия уменьшен с 120x120 до 100x100.
+    frame.Size=UDim2.fromOffset(100,100)
+    frame.BackgroundTransparency=1
+    frame.Image=WPNIMG
+    frame.ScaleType=Enum.ScaleType.Fit
+    frame.ZIndex=3
+
+    local wpnLabel=Instance.new("TextLabel",wpnGui)
+    wpnLabel.Name="WeaponDetected"
+    wpnLabel.AnchorPoint=Vector2.new(0.5,0)
+    wpnLabel.Position=UDim2.new(0.5,0,1,-30)
+    wpnLabel.Size=UDim2.fromOffset(240,26)
+    wpnLabel.BackgroundTransparency=1
+    wpnLabel.TextColor3=Y
+    wpnLabel.TextStrokeTransparency=0.3
+    wpnLabel.Font=Enum.Font.Code
+    wpnLabel.TextSize=20
+    wpnLabel.Text="ARMA DETECTADA: "..tool.Name
+    wpnLabel.ZIndex=4
 end
 
 local labels
@@ -192,7 +246,6 @@ local function ensureBeam()
     beamOuter.Material=Enum.Material.Neon
     beamOuter.Color=Y
     beamOuter.Transparency=0.25
-    -- ИЗМЕНЕНО: тоньше.
     beamOuter.Size=Vector3.new(0.18,0.18,1)
     beamOuter.TopSurface=Enum.SurfaceType.Smooth
     beamOuter.BottomSurface=Enum.SurfaceType.Smooth
@@ -208,7 +261,6 @@ local function ensureBeam()
     beamInner.Material=Enum.Material.Neon
     beamInner.Color=Color3.fromRGB(255,245,180)
     beamInner.Transparency=0
-    -- ИЗМЕНЕНО: тоньше.
     beamInner.Size=Vector3.new(0.08,0.08,1)
     beamInner.TopSurface=Enum.SurfaceType.Smooth
     beamInner.BottomSurface=Enum.SurfaceType.Smooth
@@ -233,6 +285,8 @@ end
 local function finish()
     target=nil
     if bb then bb:Destroy() bb=nil end
+    if wpnGui then wpnGui:Destroy() wpnGui=nil end
+    labels=nil
     destroyBeam()
     scanSound:Stop()
 end
@@ -253,15 +307,33 @@ conn=R.RenderStepped:Connect(function()
     if not bb then labels=create(ch) end
     if not labels then return end
 
-    labels[1].Text="STATUS: "..movement(ch)
-    labels[2].Text="SUJETO: "..target.Name
-    labels[3].Text=hum and ("SALUD: "..math.floor(hum.Health)..
-        "/"..math.floor(hum.MaxHealth)) or "SALUD: --"
-    labels[4].Text="EQUIPADO: "..equipped(ch)
-    labels[5].Text="INVENTARIO: "..inventory(ch,target)
-    labels[6].Text="MOVIMIENTO: "..movement(ch)
-    labels[7].Text="DISTANCIA: "..(a and b and
-        math.floor((a.Position-b.Position).Magnitude).." studs" or "--")
+    local tool=equippedTool(ch)
+
+    if tool then
+        labels.scanImage.Visible=false
+        labels.infoFrame.Visible=false
+        local handle=tool:FindFirstChild("Handle")
+        if not wpnGui or wpnGui.Adornee~=handle then
+            createWeaponGui(tool)
+        else
+            local lbl=wpnGui:FindFirstChild("WeaponDetected")
+            if lbl then lbl.Text="ARMA DETECTADA: "..tool.Name end
+        end
+    else
+        if wpnGui then wpnGui:Destroy() wpnGui=nil end
+        labels.scanImage.Visible=true
+        labels.infoFrame.Visible=true
+
+        labels.status.Text="STATUS: "..movement(ch)
+        labels.subject.Text="SUJETO: "..target.Name
+        labels.health.Text=hum and ("SALUD: "..math.floor(hum.Health)..
+            "/"..math.floor(hum.MaxHealth)) or "SALUD: --"
+        labels.weapon.Text="EQUIPADO: "..equipped(ch)
+        labels.inv.Text="INVENTARIO: "..inventory(ch,target)
+        labels.move.Text="MOVIMIENTO: "..movement(ch)
+        labels.dist.Text="DISTANCIA: "..(a and b and
+            math.floor((a.Position-b.Position).Magnitude).." studs" or "--")
+    end
 
     local myHead=mine and mine:FindFirstChild("Head")
     if myHead and beamOuter and beamInner then
