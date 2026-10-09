@@ -1,6 +1,5 @@
--- Звук воспроизводится при нажатии кнопки SCAN.
--- Looped отключён: одиночное воспроизведение по клику.
--- Повторный клик перезапускает звук с начала.
+-- Толщина линии уменьшена: внешняя часть 0.18, внутренняя 0.08.
+-- Всё остальное без изменений. Линия в мире, привязана к головам.
 
 local P=game:GetService("Players")
 local R=game:GetService("RunService")
@@ -23,9 +22,9 @@ end
 local ui=Instance.new("ScreenGui")
 ui.Name="EvilMortyScanner"
 ui.ResetOnSpawn=false
+ui.IgnoreGuiInset=true
 ui.Parent=G
 
--- ИЗМЕНЕНО: Looped=false. Звук играет один раз на каждый клик SCAN.
 local scanSound=Instance.new("Sound")
 scanSound.Name="ScanSound"
 scanSound.SoundId=SND
@@ -50,11 +49,6 @@ end
 
 local scan=button("SCAN",-50)
 local stop=button("STOP",0)
-local laser=Instance.new("Frame",ui)
-laser.BackgroundColor3=Y
-laser.BorderSizePixel=0
-laser.Visible=false
-laser.ZIndex=5
 
 local target,bb,conn
 
@@ -185,20 +179,61 @@ local function closest()
     return best
 end
 
+local beamOuter,beamInner
+local function ensureBeam()
+    if beamOuter and beamOuter.Parent then return end
+    beamOuter=Instance.new("Part")
+    beamOuter.Name="EvilMortyBeamOuter"
+    beamOuter.Anchored=true
+    beamOuter.CanCollide=false
+    beamOuter.CanQuery=false
+    beamOuter.CanTouch=false
+    beamOuter.CastShadow=false
+    beamOuter.Material=Enum.Material.Neon
+    beamOuter.Color=Y
+    beamOuter.Transparency=0.25
+    -- ИЗМЕНЕНО: тоньше.
+    beamOuter.Size=Vector3.new(0.18,0.18,1)
+    beamOuter.TopSurface=Enum.SurfaceType.Smooth
+    beamOuter.BottomSurface=Enum.SurfaceType.Smooth
+    beamOuter.Parent=workspace
+
+    beamInner=Instance.new("Part")
+    beamInner.Name="EvilMortyBeamInner"
+    beamInner.Anchored=true
+    beamInner.CanCollide=false
+    beamInner.CanQuery=false
+    beamInner.CanTouch=false
+    beamInner.CastShadow=false
+    beamInner.Material=Enum.Material.Neon
+    beamInner.Color=Color3.fromRGB(255,245,180)
+    beamInner.Transparency=0
+    -- ИЗМЕНЕНО: тоньше.
+    beamInner.Size=Vector3.new(0.08,0.08,1)
+    beamInner.TopSurface=Enum.SurfaceType.Smooth
+    beamInner.BottomSurface=Enum.SurfaceType.Smooth
+    beamInner.Parent=workspace
+end
+
+local function destroyBeam()
+    if beamOuter then beamOuter:Destroy() beamOuter=nil end
+    if beamInner then beamInner:Destroy() beamInner=nil end
+end
+
 local function start()
-    -- ИЗМЕНЕНО: звук играет сразу при клике SCAN.
     scanSound:Play()
     target=closest()
     if not target then return end
     local ch=target.Character
     if not ch or not ch:FindFirstChild("Head") then return end
     labels=create(ch)
+    ensureBeam()
 end
 
 local function finish()
     target=nil
     if bb then bb:Destroy() bb=nil end
-    laser.Visible=false
+    destroyBeam()
     scanSound:Stop()
 end
 
@@ -208,11 +243,7 @@ stop.MouseButton1Click:Connect(finish)
 conn=R.RenderStepped:Connect(function()
     if not target then return end
     local ch=target.Character
-    local cam=workspace.CurrentCamera
-    if not ch or not cam then
-        laser.Visible=false
-        return
-    end
+    if not ch then return end
     local head=ch:FindFirstChild("Head")
     local hum=ch:FindFirstChildOfClass("Humanoid")
     local mine=me.Character
@@ -232,16 +263,24 @@ conn=R.RenderStepped:Connect(function()
     labels[7].Text="DISTANCIA: "..(a and b and
         math.floor((a.Position-b.Position).Magnitude).." studs" or "--")
 
-    local p,on=cam:WorldToViewportPoint(head.Position)
-    if on then
-        local origin=Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y)
-        local dest=Vector2.new(p.X,p.Y)
-        local delta=dest-origin
-        laser.Visible=true
-        laser.Size=UDim2.fromOffset(delta.Magnitude,1)
-        laser.Position=UDim2.fromOffset(origin.X,origin.Y)
-        laser.Rotation=math.deg(math.atan2(delta.Y,delta.X))
-    else
-        laser.Visible=false
+    local myHead=mine and mine:FindFirstChild("Head")
+    if myHead and beamOuter and beamInner then
+        local p1=myHead.Position
+        local p2=head.Position
+        local delta=p2-p1
+        local dist=delta.Magnitude
+        if dist>0.1 then
+            local mid=(p1+p2)/2
+            local look=CFrame.lookAt(mid,p2)
+            beamOuter.CFrame=look
+            beamOuter.Size=Vector3.new(0.18,0.18,dist)
+            beamInner.CFrame=look
+            beamInner.Size=Vector3.new(0.08,0.08,dist)
+            beamOuter.Transparency=0.25
+            beamInner.Transparency=0
+        else
+            beamOuter.Transparency=1
+            beamInner.Transparency=1
+        end
     end
 end)
